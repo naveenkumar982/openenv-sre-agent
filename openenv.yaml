@@ -1,0 +1,52 @@
+name: "cloud-sre-simulator"
+version: "1.0.0"
+description: >
+  An OpenEnv environment simulating Cloud SRE & FinOps operations.
+  An AI agent manages a simulated cloud infrastructure: diagnosing outages,
+  terminating idle resources, scaling services, and optimizing costs
+  without causing collateral damage to production workloads.
+
+entrypoint: "env:CloudSREEnv"
+
+tasks:
+  - id: "phantom_volume_cleanup"
+    name: "Phantom Volume Cleanup"
+    difficulty: "easy"
+    description: "Identify and terminate 3 unattached, idle EBS volumes wasting money."
+
+  - id: "latency_spike_remediation"
+    name: "Latency Spike Remediation"
+    difficulty: "medium"
+    description: "Scale up an under-provisioned RDS database to fix high API latency, within a budget constraint."
+
+  - id: "noisy_neighbor_incident"
+    name: "Noisy Neighbor Incident"
+    difficulty: "hard"
+    description: "Identify a rogue test EC2 instance causing resource starvation, terminate it, and reboot the crashed production backend."
+
+action_space:
+  type: "discrete"
+  commands:
+    - "terminate"
+    - "scale"
+    - "reboot"
+    - "inspect"
+    - "wait"
+
+observation_space:
+  type: "structured"
+  fields:
+    - "resources: List[Resource]"
+    - "alerts: List[Alert]"
+    - "total_hourly_cost: float"
+    - "system_uptime: float (0-100)"
+
+reward_range: [-1.0, 1.0]
+max_steps: 15
+
+dependencies:
+  - "pydantic>=2.0.0"
+
+deployment:
+  platform: "huggingface-spaces"
+  dockerfile: "Dockerfile"

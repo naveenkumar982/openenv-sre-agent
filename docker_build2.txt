@@ -1,0 +1,138 @@
+﻿docker : #0 building 
+with "desktop-linux" 
+instance using 
+docker driver
+At line:1 char:28
++ ... cker rm -f 
+sre-env 2>&1; docker 
+build -t 
+cloud-sre-env . 2>&1 
+| Out-F ...
++                    
+          ~~~~~~~~~~~
+~~~~~~~~~~~~~~~~~~~~~
+~~~~
+    + CategoryInfo   
+           : NotSpe  
+  cified: (#0 buil   
+ ding wit...g doc    
+ker driver:Strin    
+g) [], RemoteExc    
+eption
+    + FullyQualified 
+   ErrorId : Native  
+  CommandError
+ 
+
+#1 [internal] load 
+build definition 
+from Dockerfile
+#1 transferring 
+dockerfile: 289B 
+0.0s done
+#1 DONE 0.0s
+
+#2 [auth] 
+library/python:pull 
+token for 
+registry-1.docker.io
+#2 DONE 0.0s
+
+#3 [internal] load 
+metadata for docker.i
+o/library/python:3.11
+-slim
+#3 DONE 1.6s
+
+#4 [internal] load 
+.dockerignore
+#4 transferring 
+context: 2B done
+#4 DONE 0.0s
+
+#5 [internal] load 
+build context
+#5 transferring 
+context: 39.52kB 
+0.1s done
+#5 DONE 0.1s
+
+#6 [1/5] FROM docker.
+io/library/python:3.1
+1-slim@sha256:9358444
+059ed78e2975ada2c189f
+1c1a3144a5dab6f35bff8
+c981afb38946634
+#6 resolve docker.io/
+library/python:3.11-s
+lim@sha256:9358444059
+ed78e2975ada2c189f1c1
+a3144a5dab6f35bff8c98
+1afb38946634 0.0s 
+done
+#6 DONE 0.1s
+
+#7 [3/5] COPY 
+requirements.txt .
+#7 CACHED
+
+#8 [2/5] WORKDIR /app
+#8 CACHED
+
+#9 [4/5] RUN pip 
+install 
+--no-cache-dir -r 
+requirements.txt
+#9 CACHED
+
+#10 [5/5] COPY . .
+#10 DONE 0.0s
+
+#11 exporting to 
+image
+#11 exporting layers 
+0.1s done
+#11 exporting 
+manifest sha256:f9d62
+b82203f7d961a77bc37e8
+6542df8c9295ef994802c
+125aea781cc4eb631 
+0.0s done
+#11 exporting config 
+sha256:9ed39c877ac13d
+f0628ffbc91120ddc9644
+ffb0df47db36e533a660f
+7fa67c34 0.0s done
+#11 exporting 
+attestation manifest 
+sha256:95d458f08cfa6e
+6b24ac29275451984f10a
+62960f9cf1e6f3643b43f
+3969c0c0 0.1s done
+#11 exporting 
+manifest list sha256:
+2bff3843b4d8a7c74dd9b
+2a616ab175ba8694c3932
+2099ed93cdff85fd14b95
+9
+#11 exporting 
+manifest list sha256:
+2bff3843b4d8a7c74dd9b
+2a616ab175ba8694c3932
+2099ed93cdff85fd14b95
+9 0.0s done
+#11 naming to docker.
+io/library/cloud-sre-
+env:latest 0.0s done
+#11 unpacking to dock
+er.io/library/cloud-s
+re-env:latest 0.0s 
+done
+#11 DONE 0.4s
+
+View build details: d
+ocker-desktop://dashb
+oard/build/desktop-li
+nux/desktop-linux/l3o
+2ffc29o8deokreutfhelq
+y
