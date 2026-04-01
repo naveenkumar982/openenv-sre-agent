@@ -139,6 +139,9 @@ async def metadata_endpoint():
 
 CUSTOM_CSS = """
 /* ── Global Dark Theme ── */
+body, .gradio-container {
+    background: linear-gradient(135deg, #0f172a 0%, #1e293b 50%, #0f172a 100%) !important;
+}
 .gradio-container { max-width: 1400px !important; }
 
 /* ── Dashboard Header ── */
@@ -629,8 +632,8 @@ with gr.Blocks(
         secondary_hue=gr.themes.colors.cyan,
         neutral_hue=gr.themes.colors.slate,
     ).set(
-        body_background_fill="linear-gradient(135deg, #0f172a 0%, #1e293b 50%, #0f172a 100%)",
-        body_background_fill_dark="linear-gradient(135deg, #0f172a 0%, #1e293b 50%, #0f172a 100%)",
+        body_background_fill="#0f172a",
+        body_background_fill_dark="#0f172a",
         block_background_fill="rgba(30, 41, 59, 0.8)",
         block_background_fill_dark="rgba(30, 41, 59, 0.8)",
         block_border_color="rgba(255,255,255,0.08)",
