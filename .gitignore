@@ -1,0 +1,20 @@
+# Secrets & local scripts
+hf_upload.py
+deploy_*.py
+deploy_*.txt
+git_push_hf.py
+upload_to_hf.py
+git_status_output.txt
+remote.txt
+inference_output.txt
+
+# Python
+__pycache__/
+*.pyc
+*.pyo
+.venv/
+*.egg-info/
+
+# IDE
+.vscode/
+.idea/

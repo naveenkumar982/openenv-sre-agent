@@ -20,7 +20,7 @@ import threading
 import gradio as gr
 import plotly.graph_objects as go
 from fastapi import FastAPI, Body
-from fastapi.responses import JSONResponse
+from fastapi.responses import JSONResponse, RedirectResponse
 from pydantic import BaseModel, Field
 from typing import Dict, Any, Optional, List
 from env import CloudSREEnv
@@ -117,6 +117,11 @@ async def schema_endpoint():
     return SchemaResponse(action=Action.model_json_schema(),
                           observation=Observation.model_json_schema(),
                           state=StateResponse.model_json_schema())
+
+@api.get("/", include_in_schema=False)
+async def root_redirect():
+    """Redirect root to Gradio dashboard."""
+    return RedirectResponse(url="/gradio")
 
 @api.get("/tasks", tags=["Environment Info"])
 async def tasks_endpoint():
