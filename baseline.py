@@ -11,6 +11,11 @@ Usage:
 import os
 import json
 import sys
+import io
+
+# Force UTF-8 output on Windows to avoid cp1252 encoding errors
+if sys.stdout.encoding != 'utf-8':
+    sys.stdout = io.TextIOWrapper(sys.stdout.buffer, encoding='utf-8', errors='replace')
 from openai import OpenAI
 from env import CloudSREEnv  # type: ignore
 from models import Action, ActionCommand  # type: ignore
@@ -219,7 +224,7 @@ def main():
     env = CloudSREEnv(max_steps=15)
 
     print("=" * 70)
-    print("  Cloud SRE OpenEnv — Baseline Agent (GPT-4o)")
+    print("  Cloud SRE OpenEnv -- Baseline Agent (GPT-4o)")
     print("=" * 70)
     print()
 
@@ -227,7 +232,7 @@ def main():
 
     for task_id in TASK_IDS:
         task_scores = []
-        print(f"━━━ Task: {task_id} ━━━")
+        print(f"--- Task: {task_id} ---")
 
         for run in range(1, NUM_RUNS + 1):
             print(f"\n  Run {run}/{NUM_RUNS}:")

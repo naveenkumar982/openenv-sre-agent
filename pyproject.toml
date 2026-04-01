@@ -1,7 +1,7 @@
 [project]
 name = "cloud-sre-simulator"
-version = "1.0.0"
-description = "OpenEnv-compliant Cloud SRE & FinOps Simulator"
+version = "2.0.0"
+description = "OpenEnv-compliant Cloud SRE & FinOps Simulator with ReAct AI Agents"
 requires-python = ">=3.10"
 dependencies = [
     "fastapi>=0.104.0",
@@ -10,6 +10,7 @@ dependencies = [
     "openai>=1.0.0",
     "pyyaml>=6.0",
     "gradio>=4.0.0",
+    "plotly>=5.18.0",
     "openenv-core>=0.2.0",
 ]
 

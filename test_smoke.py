@@ -1,63 +1,100 @@
-"""Smoke test for the Cloud SRE environment."""
+"""Quick smoke test for all upgraded modules."""
 import sys
-sys.path.insert(0, '.')
-from env import CloudSREEnv  # type: ignore
-from models import Action, ActionCommand  # type: ignore
-from tasks import list_tasks  # type: ignore
 
-env = CloudSREEnv(max_steps=15)
+def test_tasks():
+    from tasks import list_tasks, get_task
+    tasks = list_tasks()
+    assert len(tasks) == 3, f"Expected 3 tasks, got {len(tasks)}"
+    for t in tasks:
+        tc = get_task(t["id"])
+        s1 = tc.get_initial_state(seed=42)
+        s2 = tc.get_initial_state()
+        assert "resources" in s1 and "resources" in s2
+    print("[OK] Tasks: 3 tasks with seed support")
 
-print('=== Available Tasks ===')
-for t in list_tasks():
-    print(f"  {t['difficulty'].upper():>6}: {t['id']}")
+def test_env():
+    from env import CloudSREEnv
+    e = CloudSREEnv()
+    obs = e.reset("phantom_volume_cleanup", seed=42)
+    assert len(obs.resources) > 0
+    assert obs.total_hourly_cost > 0
+    
+    # Test virtual tools
+    cost_report = e.analyze_costs()
+    assert "Cost Analysis" in cost_report
+    alerts_report = e.check_alerts()
+    assert len(alerts_report) > 0
+    
+    # Test step
+    from models import Action, ActionCommand
+    result = e.step(Action(command=ActionCommand.INSPECT, resource_id=obs.resources[0].id))
+    assert result.reward is not None
+    assert len(e.get_cost_history()) == 2
+    print(f"[OK] Env: {len(obs.resources)} resources, virtual tools, chaos ready")
 
-# --- Task 1: Easy ---
-print('\n=== Task 1: Phantom Volume Cleanup ===')
-obs = env.reset('phantom_volume_cleanup')
-print(f'Resources: {len(obs.resources)}, Alerts: {len(obs.alerts)}, Cost: ${obs.total_hourly_cost:.4f}/hr')
+def test_react_agent():
+    from react_agent import ReActAgent, ReActTrace, ReActStep
+    agent = ReActAgent(api_key="test-key", model="gpt-4o-mini")
+    
+    # Test parsing
+    sample = '**Thought**: I see unattached volumes.\n\n**Action**: {"command": "inspect", "resource_id": "ebs-001"}'
+    thought, action_json = agent._parse_react_response(sample)
+    assert "unattached" in thought
+    assert action_json["command"] == "inspect"
+    assert action_json["resource_id"] == "ebs-001"
+    
+    # Test trace formatting
+    trace = ReActTrace(task_id="test", model="gpt-4o-mini")
+    step = ReActStep(
+        step_number=1, thought="Analyzing...", action_text="inspect(ebs-001)",
+        action_json={"command": "inspect"}, observation="Details...",
+        reward=0.01, cumulative_reward=0.01
+    )
+    trace.add_step(step)
+    md = trace.to_markdown()
+    assert "ReAct Agent Trace" in md
+    print("[OK] ReAct Agent: parsing & trace generation")
 
-for orphan_id in ['ebs-orphan-001', 'ebs-orphan-002', 'ebs-orphan-003']:
-    r = env.step(Action(command=ActionCommand.TERMINATE, resource_id=orphan_id))
-    print(f'  Terminated {orphan_id}: reward={r.reward:+.4f}')
+def test_arena():
+    from arena import AgentArena
+    arena = AgentArena(api_key=None)  # No API key = mock results
+    results = arena.run_arena("phantom_volume_cleanup", seed=42, models=[])
+    assert len(results) >= 2  # Mock results for Claude, Llama
+    html = arena.generate_leaderboard_html()
+    assert "Agent Arena" in html
+    print(f"[OK] Arena: {len(results)} models, leaderboard HTML generated")
 
-while not r.done:
-    r = env.step(Action(command=ActionCommand.WAIT))
+def test_app_imports():
+    # Just test that app.py imports cleanly
+    from app import generate_metric_cards, generate_topology_html, generate_alerts_html
+    from env import CloudSREEnv
+    e = CloudSREEnv()
+    obs = e.reset("noisy_neighbor_incident", seed=123)
+    
+    metrics = generate_metric_cards(obs)
+    assert "metric-card" in metrics
+    topo = generate_topology_html(obs)
+    assert "topo-node" in topo
+    alerts = generate_alerts_html(obs)
+    assert "alert" in alerts
+    print("[OK] App: dashboard functions render correctly")
 
-score, breakdown = env.grade()
-print(f'  FINAL SCORE: {score} | Orphans removed: {breakdown["orphans_terminated"]}')
-
-# --- Task 2: Medium ---
-print('\n=== Task 2: Latency Spike Remediation ===')
-obs = env.reset('latency_spike_remediation')
-print(f'Resources: {len(obs.resources)}, Alerts: {len(obs.alerts)}, Cost: ${obs.total_hourly_cost:.4f}/hr')
-
-r = env.step(Action(command=ActionCommand.SCALE, resource_id='rds-primary-001', params={'target_size': 'db.t3.medium'}))
-print(f'  Scaled RDS: reward={r.reward:+.4f}')
-
-while not r.done:
-    r = env.step(Action(command=ActionCommand.WAIT))
-
-score, breakdown = env.grade()
-print(f'  FINAL SCORE: {score} | RDS scaled: {breakdown["rds_scaled"]}, Under budget: {breakdown["under_budget"]}')
-
-# --- Task 3: Hard ---
-print('\n=== Task 3: Noisy Neighbor Incident ===')
-obs = env.reset('noisy_neighbor_incident')
-print(f'Resources: {len(obs.resources)}, Alerts: {len(obs.alerts)}, Cost: ${obs.total_hourly_cost:.4f}/hr')
-
-r = env.step(Action(command=ActionCommand.INSPECT, resource_id='ec2-rogue-test-001'))
-print(f'  Inspected rogue: reward={r.reward:+.4f}')
-
-r = env.step(Action(command=ActionCommand.TERMINATE, resource_id='ec2-rogue-test-001'))
-print(f'  Terminated rogue: reward={r.reward:+.4f}')
-
-r = env.step(Action(command=ActionCommand.REBOOT, resource_id='ec2-backend-prod-001'))
-print(f'  Rebooted backend: reward={r.reward:+.4f}')
-
-while not r.done:
-    r = env.step(Action(command=ActionCommand.WAIT))
-
-score, breakdown = env.grade()
-print(f'  FINAL SCORE: {score} | Inspected: {breakdown["inspected_rogue"]}, Terminated rogue: {breakdown["terminated_rogue"]}, Rebooted: {breakdown["rebooted_backend"]}')
-
-print('\n✅ ALL TASKS VERIFIED SUCCESSFULLY')
+if __name__ == "__main__":
+    tests = [test_tasks, test_env, test_react_agent, test_arena, test_app_imports]
+    passed = 0
+    failed = 0
+    for t in tests:
+        try:
+            t()
+            passed += 1
+        except Exception as ex:
+            print(f"[FAIL] {t.__name__}: {ex}")
+            import traceback
+            traceback.print_exc()
+            failed += 1
+    
+    print(f"\n{'='*50}")
+    print(f"Results: {passed} passed, {failed} failed out of {len(tests)}")
+    if failed > 0:
+        sys.exit(1)
+    print("All smoke tests PASSED!")

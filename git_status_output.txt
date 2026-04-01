@@ -1,0 +1,25 @@
+﻿On branch main
+Your branch is up to date with 'origin/main'.
+
+Changes not staged for commit:
+  (use "git add/rm <file>..." to update what will be committed)
+  (use "git restore <file>..." to discard changes in working directory)
+	modified:   __pycache__/env.cpython-313.pyc
+	modified:   __pycache__/tasks.cpython-313.pyc
+	modified:   baseline.py
+	deleted:    baseline_full.txt
+	deleted:    baseline_output.txt
+	deleted:    baseline_result.txt
+	deleted:    docker_build2.txt
+	deleted:    docker_build3.txt
+	deleted:    docker_build_output.txt
+	deleted:    docker_logs.txt
+	modified:   test_smoke.py
+	deleted:    validate_output.txt
+	deleted:    validate_result.txt
+
+Untracked files:
+  (use "git add <file>..." to include in what will be committed)
+	git_status_output.txt
+
+no changes added to commit (use "git add" and/or "git commit -a")

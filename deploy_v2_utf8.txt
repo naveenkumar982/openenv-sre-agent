@@ -1,0 +1,10 @@
+============================================================
+  HF Spaces Deployer v2 (All-in-one commit)
+============================================================
+
+[1/3] Auth... OK (naveen982)
+[2/3] Space... EXISTS
+[3/3] Uploading 11 files in single commit...
+
+  FAILED (400): {"error":"? Invalid input: expected string, received undefined\n  ? at value.summary"}
+============================================================

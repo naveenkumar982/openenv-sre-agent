@@ -40,7 +40,7 @@ operations = json.dumps({
 
 body = (
     f"--{boundary}\r\n"
-    f'Content-Disposition: form-data; name="header"\r\n'
+    f'Content-Disposition: form-data; name="operations"\r\n'
     f"Content-Type: application/json\r\n\r\n"
     f"{operations}\r\n"
     f"--{boundary}\r\n"
@@ -59,13 +59,22 @@ req = urllib.request.Request(
 )
 
 print(f"Uploading {filename} to {repo_id}...")
-try:
-    resp = urllib.request.urlopen(req, timeout=30)
-    result = resp.read().decode()
-    print(f"SUCCESS: {resp.status}")
-    print(result)
-except urllib.error.HTTPError as e:
-    print(f"HTTP Error {e.code}: {e.reason}")
-    print(e.read().decode())
-except Exception as e:
-    print(f"Error: {e}")
+import time
+max_retries = 3
+for attempt in range(max_retries):
+    try:
+        resp = urllib.request.urlopen(req, timeout=30)
+        result = resp.read().decode()
+        print(f"SUCCESS: {resp.status}")
+        print(result)
+        break
+    except urllib.error.HTTPError as e:
+        print(f"HTTP Error {e.code}: {e.reason}")
+        print(e.read().decode())
+        break
+    except Exception as e:
+        print(f"Attempt {attempt+1} - Error: {e}")
+        time.sleep(2)
+        if attempt == max_retries - 1:
+            print("Failed after all retries.")
+
