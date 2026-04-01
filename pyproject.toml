@@ -1,21 +1,24 @@
-[build-system]
-requires = ["setuptools>=68.0", "wheel"]
-build-backend = "setuptools.backends._legacy:_Backend"
-
 [project]
 name = "cloud-sre-simulator"
 version = "1.0.0"
 description = "OpenEnv-compliant Cloud SRE & FinOps Simulator"
-readme = "README.md"
 requires-python = ">=3.10"
 dependencies = [
+    "fastapi>=0.104.0",
+    "uvicorn[standard]>=0.24.0",
     "pydantic>=2.0.0",
     "openai>=1.0.0",
-    "gradio>=4.0.0",
     "pyyaml>=6.0",
-    "fastapi>=0.104.0",
-    "uvicorn>=0.24.0",
+    "gradio>=4.0.0",
+    "openenv-core>=0.2.0",
 ]
 
+[project.optional-dependencies]
+dev = ["pytest>=7.0"]
+
 [project.scripts]
-inference = "inference:main"
+server = "server.app:main"
+
+[build-system]
+requires = ["setuptools>=68"]
+build-backend = "setuptools.build_meta"
