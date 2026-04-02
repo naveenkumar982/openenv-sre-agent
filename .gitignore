@@ -4,9 +4,25 @@ deploy_*.py
 deploy_*.txt
 git_push_hf.py
 upload_to_hf.py
+
+# Debug/temp output files
 git_status_output.txt
 remote.txt
 inference_output.txt
+smoke_output.txt
+hf_remote_url.txt
+hf_response.html
+output_metrics_tmp.html
+diff.txt
+smoke_results.txt
+validate_results.txt
+inference_results.txt
+import_check.txt
+gradio_help.txt
+gradio_version.txt
+gradio_launch.txt
+gradio_mount.txt
+validation.txt
 
 # Python
 __pycache__/

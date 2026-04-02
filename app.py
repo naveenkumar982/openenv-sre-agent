@@ -626,24 +626,25 @@ def run_arena(task_id: str, api_key: str):
 
 # ─── Build Gradio Dashboard ──────────────────────────────────────────────────
 
+# ── Gradio 6.x: theme and css are passed to mount_gradio_app(), not Blocks() ──
+DASHBOARD_THEME = gr.themes.Soft(
+    primary_hue=gr.themes.colors.emerald,
+    secondary_hue=gr.themes.colors.cyan,
+    neutral_hue=gr.themes.colors.slate,
+).set(
+    body_background_fill="#0f172a",
+    body_background_fill_dark="#0f172a",
+    block_background_fill="rgba(30, 41, 59, 0.8)",
+    block_background_fill_dark="rgba(30, 41, 59, 0.8)",
+    block_border_color="rgba(255,255,255,0.08)",
+    block_border_color_dark="rgba(255,255,255,0.08)",
+    input_background_fill="rgba(15, 23, 42, 0.9)",
+    input_background_fill_dark="rgba(15, 23, 42, 0.9)",
+    body_text_color="#e2e8f0",
+    body_text_color_dark="#e2e8f0",
+)
+
 with gr.Blocks(
-    theme=gr.themes.Soft(
-        primary_hue=gr.themes.colors.emerald,
-        secondary_hue=gr.themes.colors.cyan,
-        neutral_hue=gr.themes.colors.slate,
-    ).set(
-        body_background_fill="#0f172a",
-        body_background_fill_dark="#0f172a",
-        block_background_fill="rgba(30, 41, 59, 0.8)",
-        block_background_fill_dark="rgba(30, 41, 59, 0.8)",
-        block_border_color="rgba(255,255,255,0.08)",
-        block_border_color_dark="rgba(255,255,255,0.08)",
-        input_background_fill="rgba(15, 23, 42, 0.9)",
-        input_background_fill_dark="rgba(15, 23, 42, 0.9)",
-        body_text_color="#e2e8f0",
-        body_text_color_dark="#e2e8f0",
-    ),
-    css=CUSTOM_CSS,
     title="Cloud SRE & FinOps Simulator — AI Agent Dashboard"
 ) as demo:
 
@@ -750,7 +751,8 @@ with gr.Blocks(
     )
 
 # ── Mount Gradio at root so HF Spaces iframe works ──
-app = gr.mount_gradio_app(api, demo, path="/")
+# Gradio 6.x: pass theme and css here instead of in Blocks()
+app = gr.mount_gradio_app(api, demo, path="/", theme=DASHBOARD_THEME, css=CUSTOM_CSS)
 
 if __name__ == "__main__":
     import uvicorn
