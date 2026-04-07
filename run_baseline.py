@@ -4,11 +4,13 @@ from openai import OpenAI
 from env import CloudSREEnv  # type: ignore
 from models import Action, ActionCommand  # type: ignore
 
-api_key = os.environ.get("OPENAI_API_KEY")
+api_key = os.environ.get("HF_TOKEN") or os.environ.get("API_KEY")
+api_base_url = os.environ.get("API_BASE_URL", "https://router.huggingface.co/v1")
+model_name = os.environ.get("MODEL_NAME", "Qwen/Qwen2.5-72B-Instruct")
 if not api_key:
-    print("ERROR: set OPENAI_API_KEY first"); sys.exit(1)
+    print("ERROR: set API_KEY or HF_TOKEN first"); sys.exit(1)
 
-client = OpenAI(api_key=api_key)
+client = OpenAI(base_url=api_base_url, api_key=api_key)
 env = CloudSREEnv(max_steps=15)
 tasks = ["phantom_volume_cleanup", "latency_spike_remediation", "noisy_neighbor_incident"]
 
@@ -54,7 +56,7 @@ for task_id in tasks:
 
         try:
             resp = client.chat.completions.create(
-                model="gpt-4o",
+                model=model_name,
                 messages=messages,
                 temperature=0.0,
                 max_tokens=200,

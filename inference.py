@@ -1,310 +1,160 @@
-"""
-Baseline inference agent for the Cloud SRE OpenEnv.
-
-Demonstrates the agent loop: reset() -> step() -> ... -> done
-using simple heuristic rules for each task.
-
-Emits structured output required by the Phase 2 validator:
-  [START] task=<NAME>
-  [STEP] step=<N> reward=<R>
-  [END] task=<NAME> score=<S> steps=<N>
-
-Usage:
-    # Against a running server:
-    python inference.py --url http://localhost:7860
-
-    # Direct (no server needed):
-    python inference.py --direct
-"""
-
-import argparse
+import os
 import json
 import sys
-import os
+from typing import List, Optional
+from openai import OpenAI
 
-sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
+from env import CloudSREEnv
+from models import Action, ActionCommand
+from tasks import list_tasks
 
+API_KEY = os.getenv("HF_TOKEN") or os.getenv("API_KEY") 
+API_BASE_URL = os.getenv("API_BASE_URL") or "https://router.huggingface.co/v1"
+MODEL_NAME = os.getenv("MODEL_NAME") or "Qwen/Qwen2.5-72B-Instruct"
+BENCHMARK = "cloud-sre-simulator"
+SUCCESS_SCORE_THRESHOLD = 0.5  # Treat >= 0.5 as success
 
-def emit(msg: str):
-    """Print a structured-output line to stdout and flush immediately."""
-    print(msg, flush=True)
+def log_start(task: str, env: str, model: str) -> None:
+    print(f"[START] task={task} env={env} model={model}", flush=True)
 
+def log_step(step: int, action: str, reward: float, done: bool, error: Optional[str]) -> None:
+    error_val = error if error else "null"
+    done_val = str(done).lower()
+    print(
+        f"[STEP] step={step} action={action} reward={reward:.2f} done={done_val} error={error_val}",
+        flush=True,
+    )
 
-# ─── Direct mode (no HTTP, import env directly) ──────────────────────────────
+def log_end(success: bool, steps: int, score: float, rewards: List[float]) -> None:
+    rewards_str = ",".join(f"{r:.2f}" for r in rewards)
+    print(f"[END] success={str(success).lower()} steps={steps} score={score:.3f} rewards={rewards_str}", flush=True)
 
-def run_direct():
-    """Run inference directly using the Python environment."""
-    from env import CloudSREEnv
-    from models import Action, ActionCommand
-    from tasks import list_tasks
+SYSTEM_PROMPT = (
+    "You are an expert Cloud SRE agent resolving infrastructure incidents.\n"
+    "Reply ONLY with a raw JSON action, no markdown formatting, no code blocks.\n"
+    'Format: {"command":"<terminate/scale/reboot/inspect/wait>","resource_id":"<id or null>","params":{"target_size":"<size>"}}\n'
+    "\n"
+    "CRITICAL RULES:\n"
+    "1. For id 'phantom_volume_cleanup', find and terminate unattached/available EBS volumes.\n"
+    "2. For id 'latency_spike_remediation', scale up under-provisioned RDS reading high CPU.\n"
+    "3. For id 'noisy_neighbor_incident', terminate rogue test EC2 and reboot crashed prod EC2.\n"
+    "4. NEVER terminate production resources unless explicitly rogue."
+)
 
+def run_tests():
+    if not API_KEY:
+        print("ERROR: API_KEY or HF_TOKEN is not set", file=sys.stderr)
+        # Try to use a dummy key if none provided and running locally, but evaluator will inject it.
+        pass
+
+    # Ensure client picks up proper BASE URL
+    # Initialize per instructions: base_url=os.environ["API_BASE_URL"] and api_key=os.environ["API_KEY"]
+    client = OpenAI(base_url=API_BASE_URL, api_key=API_KEY or "dummy")
+    
     env = CloudSREEnv(max_steps=15)
     all_tasks = list_tasks()
 
-    emit("=" * 60)
-    emit("  Cloud SRE OpenEnv — Baseline Inference Agent (Direct)")
-    emit("=" * 60)
-
     for task_info in all_tasks:
         task_id = task_info["id"]
-
-        # ── [START] marker ──
-        emit(f"[START] task={task_id}")
-
+        
+        log_start(task=task_id, env=BENCHMARK, model=MODEL_NAME)
+        
         obs = env.reset(task_id)
-        emit(f"  Initial: {len(obs.resources)} resources, "
-             f"${obs.total_hourly_cost:.4f}/hr, "
-             f"uptime={obs.system_uptime:.1f}%")
+        desc = env.get_task_description()
+        
+        rewards = []
+        steps_taken = 0
+        score = 0.0
+        success = False
+        done = False
+        
+        messages = [{"role": "system", "content": SYSTEM_PROMPT}]
+        
+        while not done:
+            steps_taken += 1
+            state = obs.model_dump()
+            
+            resources = []
+            for r in state["resources"]:
+                r_dict = {
+                    "id": r["id"], 
+                    "type": r["type"], 
+                    "status": r["status"],
+                    "size": r["instance_size"], 
+                    "cpu": r["cpu_utilization"],
+                    "tags": r["tags"]
+                }
+                if r.get("attached_to"):
+                    r_dict["attached_to"] = r.get("attached_to")
+                resources.append(r_dict)
+                
+            prompt = (
+                f"Task ID: {task_id}\n"
+                f"Description: {desc}\n"
+                f"Resources: {json.dumps(resources)}\n"
+                f"Step {steps_taken}/{state['max_steps']}\n"
+                "What is your next action JSON?"
+            )
+            messages.append({"role": "user", "content": prompt})
 
-        actions = get_heuristic_actions(task_id, obs)
+            action_str = ""
+            error_msg = None
+            try:
+                resp = client.chat.completions.create(
+                    model=MODEL_NAME,
+                    messages=messages,
+                    temperature=0.0,
+                    max_tokens=200,
+                    # DO NOT use response_format={"type": "json_object"} as generic HF routers may not support it universally
+                )
+                content = (resp.choices[0].message.content or "").strip()
+                # Clean up any potential markdown formatting the model might mistakenly include
+                if content.startswith("```json"):
+                    content = content[7:]
+                if content.startswith("```"):
+                    content = content[3:]
+                if content.endswith("```"):
+                    content = content[:-3]
+                content = content.strip()
+                
+                action_str = content
+                messages.append({"role": "assistant", "content": content})
+                data = json.loads(content)
+            except Exception as e:
+                error_msg = f"LLM Error: {str(e)}"
+                data = {"command": "wait"}
+                action_str = json.dumps(data)
+                messages.append({"role": "assistant", "content": action_str})
 
-        step_num = 0
-        result = None
-        for i, action in enumerate(actions):
+            try:
+                cmd = ActionCommand(data.get("command", "wait"))
+                action = Action(
+                    command=cmd,
+                    resource_id=data.get("resource_id"),
+                    params=data.get("params", {}),
+                )
+            except Exception as e:
+                action = Action(command=ActionCommand.WAIT)
+                error_msg = f"Parse Error: {str(e)}"
+                
             result = env.step(action)
-            step_num = i + 1
-            cmd_str = f"{action.command.value}({action.resource_id or ''})"
+            obs = result.observation
+            done = result.done
             reward = result.reward
 
-            # ── [STEP] marker ──
-            emit(f"[STEP] step={step_num} reward={reward:.4f}")
-            emit(f"  Action: {cmd_str}")
+            rewards.append(reward)
+            
+            # format action string safely (no newlines)
+            safe_action_str = action_str.replace('\n', ' ').replace('\r', '')
+            log_step(step=steps_taken, action=safe_action_str, reward=reward, done=done, error=error_msg)
 
-            if result.done:
-                score = result.info.get("final_score", 0)
-                emit(f"  >> Episode done. Final score: {score:.2f}/1.00")
+            if done:
+                score = result.info.get("final_score", 0.0)
+                score = min(max(score, 0.0), 1.0) # Clamp to [0, 1]
+                success = score >= SUCCESS_SCORE_THRESHOLD
                 break
-
-        # Run to completion if not already done
-        if result is not None and not result.done:
-            while not result.done:
-                result = env.step(Action(command=ActionCommand.WAIT))
-                step_num += 1
-                emit(f"[STEP] step={step_num} reward={result.reward:.4f}")
-
-            score = result.info.get("final_score", 0)
-            emit(f"  >> Episode done (waited). Final score: {score:.2f}/1.00")
-
-        # If no actions were generated, still handle gracefully
-        if result is None:
-            result_obj = env.step(Action(command=ActionCommand.WAIT))
-            step_num = 1
-            emit(f"[STEP] step={step_num} reward={result_obj.reward:.4f}")
-            while not result_obj.done:
-                result_obj = env.step(Action(command=ActionCommand.WAIT))
-                step_num += 1
-                emit(f"[STEP] step={step_num} reward={result_obj.reward:.4f}")
-            score = result_obj.info.get("final_score", 0)
-        else:
-            score, breakdown = env.grade()
-            emit(f"  Grading: {json.dumps(breakdown, indent=4)}")
-
-        # ── [END] marker ──
-        emit(f"[END] task={task_id} score={score:.2f} steps={step_num}")
-
-    emit("")
-    emit("=" * 60)
-    emit("  Baseline inference complete.")
-    emit("=" * 60)
-
-
-# ─── HTTP mode (call the server endpoints) ───────────────────────────────────
-
-def run_http(base_url: str):
-    """Run inference against a running OpenEnv HTTP server."""
-    try:
-        import urllib.request
-        import urllib.error
-    except ImportError:
-        emit("ERROR: urllib not available")
-        sys.exit(1)
-
-    emit("=" * 60)
-    emit("  Cloud SRE OpenEnv — Baseline Inference Agent (HTTP)")
-    emit(f"  Server: {base_url}")
-    emit("=" * 60)
-
-    # Health check
-    try:
-        req = urllib.request.Request(f"{base_url}/health")
-        with urllib.request.urlopen(req) as resp:
-            health = json.loads(resp.read().decode())
-            emit(f"  Health: {health['status']}")
-    except Exception as e:
-        emit(f"  ERROR: Cannot reach server: {e}")
-        sys.exit(1)
-
-    # Get tasks
-    try:
-        req = urllib.request.Request(f"{base_url}/tasks")
-        with urllib.request.urlopen(req) as resp:
-            tasks = json.loads(resp.read().decode())
-    except Exception:
-        tasks = [
-            {"id": "phantom_volume_cleanup"},
-            {"id": "latency_spike_remediation"},
-            {"id": "noisy_neighbor_incident"},
-        ]
-
-    for task_info in tasks:
-        task_id = task_info["id"]
-
-        # ── [START] marker ──
-        emit(f"[START] task={task_id}")
-
-        # Reset
-        reset_data = json.dumps({"task_id": task_id}).encode()
-        req = urllib.request.Request(
-            f"{base_url}/reset",
-            data=reset_data,
-            headers={"Content-Type": "application/json"},
-            method="POST",
-        )
-        with urllib.request.urlopen(req) as resp:
-            reset_result = json.loads(resp.read().decode())
-            obs = reset_result["observation"]
-            emit(f"  Reset OK: {len(obs.get('resources', []))} resources")
-
-        # Get heuristic actions for this task
-        heuristic_actions = get_heuristic_actions_dict(task_id)
-
-        step_num = 0
-        done = False
-        score = 0.0
-
-        for i, action_data in enumerate(heuristic_actions):
-            step_data = json.dumps({"action": action_data}).encode()
-            req = urllib.request.Request(
-                f"{base_url}/step",
-                data=step_data,
-                headers={"Content-Type": "application/json"},
-                method="POST",
-            )
-            with urllib.request.urlopen(req) as resp:
-                step_result = json.loads(resp.read().decode())
-                reward = step_result.get("reward", 0)
-                done = step_result.get("done", False)
-                step_num = i + 1
-                cmd_str = f"{action_data['command']}({action_data.get('resource_id', '')})"
-
-                # ── [STEP] marker ──
-                emit(f"[STEP] step={step_num} reward={reward:.4f}")
-                emit(f"  Action: {cmd_str}")
-
-                if done:
-                    score = step_result.get("info", {}).get("final_score", 0)
-                    emit(f"  >> Episode done. Final score: {score:.2f}/1.00")
-                    break
-
-        # Wait until done
-        if not done:
-            while not done:
-                wait_data = json.dumps({"action": {"command": "wait"}}).encode()
-                req = urllib.request.Request(
-                    f"{base_url}/step",
-                    data=wait_data,
-                    headers={"Content-Type": "application/json"},
-                    method="POST",
-                )
-                with urllib.request.urlopen(req) as resp:
-                    step_result = json.loads(resp.read().decode())
-                    done = step_result.get("done", False)
-                    step_num += 1
-                    reward = step_result.get("reward", 0)
-                    emit(f"[STEP] step={step_num} reward={reward:.4f}")
-
-            score = step_result.get("info", {}).get("final_score", 0)
-            emit(f"  >> Episode done (waited). Final score: {score:.2f}/1.00")
-
-        # ── [END] marker ──
-        emit(f"[END] task={task_id} score={score:.2f} steps={step_num}")
-
-    emit("")
-    emit("=" * 60)
-    emit("  Baseline inference complete.")
-    emit("=" * 60)
-
-
-# ─── Heuristic Action Selection ──────────────────────────────────────────────
-
-def get_heuristic_actions(task_id, obs):
-    """Return a list of Action objects based on simple heuristics."""
-    from models import Action, ActionCommand
-
-    if task_id == "phantom_volume_cleanup":
-        # Find and terminate unattached EBS volumes
-        actions = []
-        for r in obs.resources:
-            if r.type.value == "ebs_volume" and r.status.value == "available":
-                actions.append(Action(command=ActionCommand.TERMINATE, resource_id=r.id))
-        return actions
-
-    elif task_id == "latency_spike_remediation":
-        # Find the under-provisioned RDS and scale it up
-        actions = []
-        for r in obs.resources:
-            if r.type.value == "rds_database" and r.cpu_utilization > 90:
-                actions.append(Action(
-                    command=ActionCommand.SCALE,
-                    resource_id=r.id,
-                    params={"target_size": "db.t3.medium"},
-                ))
-        return actions
-
-    elif task_id == "noisy_neighbor_incident":
-        # Inspect rogue, terminate it, reboot crashed prod
-        actions = []
-        rogue_id = None
-        crashed_id = None
-        for r in obs.resources:
-            if r.tags.get("env") == "test" and r.cpu_utilization >= 95:
-                rogue_id = r.id
-            if r.status.value == "stopped" and r.tags.get("env") == "prod":
-                crashed_id = r.id
-
-        if rogue_id:
-            actions.append(Action(command=ActionCommand.INSPECT, resource_id=rogue_id))
-            actions.append(Action(command=ActionCommand.TERMINATE, resource_id=rogue_id))
-        if crashed_id:
-            actions.append(Action(command=ActionCommand.REBOOT, resource_id=crashed_id))
-        return actions
-
-    return []
-
-
-def get_heuristic_actions_dict(task_id):
-    """Return a list of action dicts for HTTP mode."""
-    if task_id == "phantom_volume_cleanup":
-        return [
-            {"command": "terminate", "resource_id": "ebs-orphan-001"},
-            {"command": "terminate", "resource_id": "ebs-orphan-002"},
-            {"command": "terminate", "resource_id": "ebs-orphan-003"},
-        ]
-    elif task_id == "latency_spike_remediation":
-        return [
-            {"command": "scale", "resource_id": "rds-primary-001",
-             "params": {"target_size": "db.t3.medium"}},
-        ]
-    elif task_id == "noisy_neighbor_incident":
-        return [
-            {"command": "inspect", "resource_id": "ec2-rogue-test-001"},
-            {"command": "terminate", "resource_id": "ec2-rogue-test-001"},
-            {"command": "reboot", "resource_id": "ec2-backend-prod-001"},
-        ]
-    return []
-
-
-# ─── Main ────────────────────────────────────────────────────────────────────
+                
+        log_end(success=success, steps=steps_taken, score=score, rewards=rewards)
 
 if __name__ == "__main__":
-    parser = argparse.ArgumentParser(description="Cloud SRE OpenEnv Baseline Agent")
-    parser.add_argument("--url", type=str, default=None,
-                        help="Base URL of the running server (e.g. http://localhost:7860)")
-    parser.add_argument("--direct", action="store_true",
-                        help="Run directly without HTTP server")
-    args = parser.parse_args()
-
-    if args.direct or args.url is None:
-        run_direct()
-    else:
-        run_http(args.url)
+    run_tests()

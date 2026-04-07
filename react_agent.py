@@ -129,15 +129,16 @@ class ReActAgent:
     against the CloudSREEnv, with full reasoning trace capture.
     """
 
-    def __init__(self, api_key: Optional[str] = None, model: str = "gpt-4o-mini"):
-        self.api_key = api_key or os.environ.get("OPENAI_API_KEY", "")
-        self.model = model
+    def __init__(self, api_key: Optional[str] = None, model: Optional[str] = None):
+        self.api_key = api_key or os.environ.get("HF_TOKEN") or os.environ.get("API_KEY", "")
+        self.base_url = os.environ.get("API_BASE_URL", "https://router.huggingface.co/v1")
+        self.model = model or os.environ.get("MODEL_NAME", "Qwen/Qwen2.5-72B-Instruct")
         self._client = None
 
     def _get_client(self):
         if self._client is None:
             from openai import OpenAI
-            self._client = OpenAI(api_key=self.api_key)
+            self._client = OpenAI(base_url=self.base_url, api_key=self.api_key)
         return self._client
 
     def run_episode(self, env, task_id: str, seed: Optional[int] = None,
