@@ -4,6 +4,11 @@ Baseline inference agent for the Cloud SRE OpenEnv.
 Demonstrates the agent loop: reset() -> step() -> ... -> done
 using simple heuristic rules for each task.
 
+Emits structured output required by the Phase 2 validator:
+  [START] task=<NAME>
+  [STEP] step=<N> reward=<R>
+  [END] task=<NAME> score=<S> steps=<N>
+
 Usage:
     # Against a running server:
     python inference.py --url http://localhost:7860
@@ -20,6 +25,11 @@ import os
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 
 
+def emit(msg: str):
+    """Print a structured-output line to stdout and flush immediately."""
+    print(msg, flush=True)
+
+
 # ─── Direct mode (no HTTP, import env directly) ──────────────────────────────
 
 def run_direct():
@@ -31,47 +41,71 @@ def run_direct():
     env = CloudSREEnv(max_steps=15)
     all_tasks = list_tasks()
 
-    print("=" * 60)
-    print("  Cloud SRE OpenEnv — Baseline Inference Agent (Direct)")
-    print("=" * 60)
+    emit("=" * 60)
+    emit("  Cloud SRE OpenEnv — Baseline Inference Agent (Direct)")
+    emit("=" * 60)
 
     for task_info in all_tasks:
         task_id = task_info["id"]
-        print(f"\n{'-' * 50}")
-        print(f"  Task: {task_id} ({task_info['difficulty']})")
-        print(f"{'-' * 50}")
+
+        # ── [START] marker ──
+        emit(f"[START] task={task_id}")
 
         obs = env.reset(task_id)
-        print(f"  Initial: {len(obs.resources)} resources, "
-              f"${obs.total_hourly_cost:.4f}/hr, "
-              f"uptime={obs.system_uptime:.1f}%")
+        emit(f"  Initial: {len(obs.resources)} resources, "
+             f"${obs.total_hourly_cost:.4f}/hr, "
+             f"uptime={obs.system_uptime:.1f}%")
 
         actions = get_heuristic_actions(task_id, obs)
 
+        step_num = 0
+        result = None
         for i, action in enumerate(actions):
             result = env.step(action)
+            step_num = i + 1
             cmd_str = f"{action.command.value}({action.resource_id or ''})"
-            print(f"  Step {i+1}: {cmd_str} -> reward={result.reward:+.4f}")
+            reward = result.reward
+
+            # ── [STEP] marker ──
+            emit(f"[STEP] step={step_num} reward={reward:.4f}")
+            emit(f"  Action: {cmd_str}")
 
             if result.done:
                 score = result.info.get("final_score", 0)
-                print(f"  >> Episode done. Final score: {score:.2f}/1.00")
+                emit(f"  >> Episode done. Final score: {score:.2f}/1.00")
                 break
 
         # Run to completion if not already done
-        if not result.done:
+        if result is not None and not result.done:
             while not result.done:
                 result = env.step(Action(command=ActionCommand.WAIT))
+                step_num += 1
+                emit(f"[STEP] step={step_num} reward={result.reward:.4f}")
 
             score = result.info.get("final_score", 0)
-            print(f"  >> Episode done (waited). Final score: {score:.2f}/1.00")
+            emit(f"  >> Episode done (waited). Final score: {score:.2f}/1.00")
 
-        score, breakdown = env.grade()
-        print(f"  Grading: {json.dumps(breakdown, indent=4)}")
+        # If no actions were generated, still handle gracefully
+        if result is None:
+            result_obj = env.step(Action(command=ActionCommand.WAIT))
+            step_num = 1
+            emit(f"[STEP] step={step_num} reward={result_obj.reward:.4f}")
+            while not result_obj.done:
+                result_obj = env.step(Action(command=ActionCommand.WAIT))
+                step_num += 1
+                emit(f"[STEP] step={step_num} reward={result_obj.reward:.4f}")
+            score = result_obj.info.get("final_score", 0)
+        else:
+            score, breakdown = env.grade()
+            emit(f"  Grading: {json.dumps(breakdown, indent=4)}")
 
-    print(f"\n{'=' * 60}")
-    print("  Baseline inference complete.")
-    print(f"{'=' * 60}")
+        # ── [END] marker ──
+        emit(f"[END] task={task_id} score={score:.2f} steps={step_num}")
+
+    emit("")
+    emit("=" * 60)
+    emit("  Baseline inference complete.")
+    emit("=" * 60)
 
 
 # ─── HTTP mode (call the server endpoints) ───────────────────────────────────
@@ -82,22 +116,22 @@ def run_http(base_url: str):
         import urllib.request
         import urllib.error
     except ImportError:
-        print("ERROR: urllib not available")
+        emit("ERROR: urllib not available")
         sys.exit(1)
 
-    print("=" * 60)
-    print("  Cloud SRE OpenEnv — Baseline Inference Agent (HTTP)")
-    print(f"  Server: {base_url}")
-    print("=" * 60)
+    emit("=" * 60)
+    emit("  Cloud SRE OpenEnv — Baseline Inference Agent (HTTP)")
+    emit(f"  Server: {base_url}")
+    emit("=" * 60)
 
     # Health check
     try:
         req = urllib.request.Request(f"{base_url}/health")
         with urllib.request.urlopen(req) as resp:
             health = json.loads(resp.read().decode())
-            print(f"  Health: {health['status']}")
+            emit(f"  Health: {health['status']}")
     except Exception as e:
-        print(f"  ERROR: Cannot reach server: {e}")
+        emit(f"  ERROR: Cannot reach server: {e}")
         sys.exit(1)
 
     # Get tasks
@@ -114,9 +148,9 @@ def run_http(base_url: str):
 
     for task_info in tasks:
         task_id = task_info["id"]
-        print(f"\n{'-' * 50}")
-        print(f"  Task: {task_id}")
-        print(f"{'-' * 50}")
+
+        # ── [START] marker ──
+        emit(f"[START] task={task_id}")
 
         # Reset
         reset_data = json.dumps({"task_id": task_id}).encode()
@@ -129,10 +163,14 @@ def run_http(base_url: str):
         with urllib.request.urlopen(req) as resp:
             reset_result = json.loads(resp.read().decode())
             obs = reset_result["observation"]
-            print(f"  Reset OK: {len(obs.get('resources', []))} resources")
+            emit(f"  Reset OK: {len(obs.get('resources', []))} resources")
 
         # Get heuristic actions for this task
         heuristic_actions = get_heuristic_actions_dict(task_id)
+
+        step_num = 0
+        done = False
+        score = 0.0
 
         for i, action_data in enumerate(heuristic_actions):
             step_data = json.dumps({"action": action_data}).encode()
@@ -146,12 +184,16 @@ def run_http(base_url: str):
                 step_result = json.loads(resp.read().decode())
                 reward = step_result.get("reward", 0)
                 done = step_result.get("done", False)
+                step_num = i + 1
                 cmd_str = f"{action_data['command']}({action_data.get('resource_id', '')})"
-                print(f"  Step {i+1}: {cmd_str} -> reward={reward:+.4f}")
+
+                # ── [STEP] marker ──
+                emit(f"[STEP] step={step_num} reward={reward:.4f}")
+                emit(f"  Action: {cmd_str}")
 
                 if done:
                     score = step_result.get("info", {}).get("final_score", 0)
-                    print(f"  >> Episode done. Final score: {score:.2f}/1.00")
+                    emit(f"  >> Episode done. Final score: {score:.2f}/1.00")
                     break
 
         # Wait until done
@@ -167,13 +209,20 @@ def run_http(base_url: str):
                 with urllib.request.urlopen(req) as resp:
                     step_result = json.loads(resp.read().decode())
                     done = step_result.get("done", False)
+                    step_num += 1
+                    reward = step_result.get("reward", 0)
+                    emit(f"[STEP] step={step_num} reward={reward:.4f}")
 
             score = step_result.get("info", {}).get("final_score", 0)
-            print(f"  >> Episode done (waited). Final score: {score:.2f}/1.00")
+            emit(f"  >> Episode done (waited). Final score: {score:.2f}/1.00")
 
-    print(f"\n{'=' * 60}")
-    print("  Baseline inference complete.")
-    print(f"{'=' * 60}")
+        # ── [END] marker ──
+        emit(f"[END] task={task_id} score={score:.2f} steps={step_num}")
+
+    emit("")
+    emit("=" * 60)
+    emit("  Baseline inference complete.")
+    emit("=" * 60)
 
 
 # ─── Heuristic Action Selection ──────────────────────────────────────────────
