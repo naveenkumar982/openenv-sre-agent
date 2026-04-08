@@ -218,9 +218,9 @@ class Task1PhantomVolumeCleanup:
                 score -= 0.50
                 breakdown["active_resources_terminated"].append(rid)
                 breakdown["penalties"] += 0.50
-        score = round(max(0.0, min(1.0, score)), 2)
+        score = round(max(0.01, min(0.99, score)), 2)
         if len(breakdown["orphans_terminated"]) == len(target_ids) and not breakdown["active_resources_terminated"]:
-            score = 1.0
+            score = 0.99
         return score, breakdown
 
 
@@ -394,7 +394,7 @@ class Task2LatencySpikeRemediation:
         for _ in breakdown["ec2s_terminated"]:
             score -= 0.30
             breakdown["penalties"] += 0.30
-        score = round(max(0.0, min(1.0, score)), 2)
+        score = round(max(0.01, min(0.99, score)), 2)
         return score, breakdown
 
 
@@ -612,7 +612,7 @@ class Task3NoisyNeighborIncident:
             score -= 0.50
             breakdown["penalties"] += 0.50
 
-        score = round(max(0.0, min(1.0, score)), 2)
+        score = round(max(0.01, min(0.99, score)), 2)
         return score, breakdown
 
 
